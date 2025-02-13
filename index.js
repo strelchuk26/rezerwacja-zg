@@ -21,7 +21,7 @@ admin.initializeApp({
 });
 const db = admin.firestore();
 const USERS_COLLECTION = "telegram_users";
-const last_date = "";
+let last_date = "";
 
 const serverURL =
     "https://plugin.bookero.pl/plugin-api/v2/getMonth?bookero_id=SnLKupjwDaPO&lang=pl&periodicity_id=0&custom_duration_id=0&service=55039&worker=0&plugin_comment=%7B%22data%22:%7B%22parameters%22:%7B%7D%7D%7D&phone=&people=1&email=&plus_months=0";
