@@ -2,9 +2,9 @@ import express from "express";
 import dotenv from "dotenv";
 import axios from "axios";
 import admin from "firebase-admin";
-import path from "path";
 import cron from "node-cron";
 import { Bot, InlineKeyboard } from "grammy";
+import { CollectionGroup } from "firebase-admin/firestore";
 
 dotenv.config();
 
@@ -21,6 +21,7 @@ admin.initializeApp({
 });
 const db = admin.firestore();
 const USERS_COLLECTION = "telegram_users";
+const last_date = "";
 
 const serverURL =
     "https://plugin.bookero.pl/plugin-api/v2/getMonth?bookero_id=SnLKupjwDaPO&lang=pl&periodicity_id=0&custom_duration_id=0&service=55039&worker=0&plugin_comment=%7B%22data%22:%7B%22parameters%22:%7B%7D%7D%7D&phone=&people=1&email=&plus_months=0";
@@ -57,7 +58,7 @@ async function fetchData() {
 }
 
 bot.catch((err) => {
-    console.error("Error occurred:", err);
+    console.error("Error occurred: ", err);
 });
 
 bot.command("start", async (ctx) => {
@@ -78,8 +79,12 @@ bot.command("checkFreeDate", async (ctx) => {
         const data = await fetchData();
         if (data) {
             if (data.first_free_term) {
+                console.log(data.first_free_term);
+                last_date = data.first_free_term;
                 const keyboard = new InlineKeyboard().url("Зарезервуй!", `https://rezerwacja.zielona-gora.pl/`);
-                ctx.reply(`Перша вільна дата для резервування: ${data.first_free_term}`, { reply_markup: keyboard });
+                ctx.reply(`Перша вільна дата для резервування: ${data.first_free_term}`, {
+                    reply_markup: keyboard,
+                });
             } else {
                 ctx.reply("Немає вільних термінів.");
             }
@@ -95,15 +100,25 @@ async function checkAndNotifyUsers() {
     try {
         const data = await fetchData();
         if (data && data.first_free_term) {
-            const keyboard = new InlineKeyboard().url("Зарезервуй!", `https://rezerwacja.zielona-gora.pl/`);
-            const users = await getAllUsers();
-            for (const chatId of users) {
-                try {
-                    await bot.api.sendMessage(chatId, `Перша вільна дата для резервування: ${data.first_free_term}`, {
-                        reply_markup: keyboard,
-                    });
-                } catch (err) {
-                    console.error(`Не вдалося відправити повідомлення користувачу ${chatId}:`, err);
+            console.log(data.first_free_term);
+            if (last_date === data.first_free_term) {
+                return;
+            } else {
+                last_date = data.first_free_term;
+                const keyboard = new InlineKeyboard().url("Зарезервуй!", `https://rezerwacja.zielona-gora.pl/`);
+                const users = await getAllUsers();
+                for (const chatId of users) {
+                    try {
+                        await bot.api.sendMessage(
+                            chatId,
+                            `Перша вільна дата для резервування: ${data.first_free_term}`,
+                            {
+                                reply_markup: keyboard,
+                            }
+                        );
+                    } catch (err) {
+                        console.error(`Не вдалося відправити повідомлення користувачу ${chatId}:`, err);
+                    }
                 }
             }
         }
@@ -112,11 +127,11 @@ async function checkAndNotifyUsers() {
     }
 }
 
-cron.schedule("*/20 * * * *", async () => {
-    console.log(`Розсилка... ${new Date().toISOString()}`);
+cron.schedule("*/10 * * * *", async () => {
+    console.log(`Розсилка...`);
     await checkAndNotifyUsers();
 });
 
 bot.start();
 
-app.listen(5000, (err) => console.log(`Server listening on PORT: 5000`));
+app.listen(5000, (err) => console.log(`Server running.`));
