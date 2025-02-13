@@ -4,7 +4,6 @@ import axios from "axios";
 import admin from "firebase-admin";
 import cron from "node-cron";
 import { Bot, InlineKeyboard } from "grammy";
-import { CollectionGroup } from "firebase-admin/firestore";
 
 dotenv.config();
 
@@ -25,6 +24,10 @@ let last_date = "";
 
 const serverURL =
     "https://plugin.bookero.pl/plugin-api/v2/getMonth?bookero_id=SnLKupjwDaPO&lang=pl&periodicity_id=0&custom_duration_id=0&service=55039&worker=0&plugin_comment=%7B%22data%22:%7B%22parameters%22:%7B%7D%7D%7D&phone=&people=1&email=&plus_months=0";
+
+app.get("/", (req, res) => {
+    res.send("Server is running!");
+});
 
 async function saveUser(chatId, username) {
     try {
@@ -79,7 +82,7 @@ bot.command("checkFreeDate", async (ctx) => {
         const data = await fetchData();
         if (data) {
             if (data.first_free_term) {
-                console.log(data.first_free_term);
+                console.log(`${ctx.from?.username}: ${data.first_free_term}`);
                 last_date = data.first_free_term;
                 const keyboard = new InlineKeyboard().url("Зарезервуй!", `https://rezerwacja.zielona-gora.pl/`);
                 ctx.reply(`Перша вільна дата для резервування: ${data.first_free_term}`, {
