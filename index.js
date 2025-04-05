@@ -29,7 +29,7 @@ app.get("/", (req, res) => {
     res.send("Server is running!");
 });
 
-async function saveUser(chatId, username) {
+async function saveUser(chatId, username, registrationDate) {
     try {
         const userRef = db.collection(USERS_COLLECTION).doc(chatId.toString());
         await userRef.set({ chatId, username, registrationDate }, { merge: true });
