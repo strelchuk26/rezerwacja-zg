@@ -32,7 +32,7 @@ app.get("/", (req, res) => {
 async function saveUser(chatId, username) {
     try {
         const userRef = db.collection(USERS_COLLECTION).doc(chatId.toString());
-        await userRef.set({ chatId, username }, { merge: true });
+        await userRef.set({ chatId, username, registrationDate }, { merge: true });
         console.log(`User ${username} with chatId ${chatId} saved successfully.`);
     } catch (error) {
         console.error("Error saving user to Firestore:", error);
@@ -68,7 +68,8 @@ bot.command("start", async (ctx) => {
     try {
         const chatId = ctx.chat.id;
         const username = ctx.from?.username || "Unknown";
-        await saveUser(chatId, username);
+        const registrationDate = new Date().toISOString();
+        await saveUser(chatId, username, registrationDate);
         ctx.reply(
             "Привіт! Тепер ти будеш отримувати повідомлення про вільні дати. Використовуй /checkFreeDate для перевірки вільних дат."
         );
