@@ -29,10 +29,10 @@ app.get("/", (req, res) => {
     res.send("Server is running!");
 });
 
-async function saveUser(chatId, username, registrationDate) {
+async function saveUser(chatId, username, registrationDate, firstName) {
     try {
         const userRef = db.collection(USERS_COLLECTION).doc(chatId.toString());
-        await userRef.set({ chatId, username, registrationDate }, { merge: true });
+        await userRef.set({ chatId, username, registrationDate, firstName }, { merge: true });
         console.log(`User ${username} with chatId ${chatId} saved successfully.`);
     } catch (error) {
         console.error("Error saving user to Firestore:", error);
@@ -69,7 +69,8 @@ bot.command("start", async (ctx) => {
         const chatId = ctx.chat.id;
         const username = ctx.from?.username || "Unknown";
         const registrationDate = new Date().toISOString();
-        await saveUser(chatId, username, registrationDate);
+        const firstName = ctx.from?.first_name || "Unknown";
+        await saveUser(chatId, username, registrationDate, firstName);
         ctx.reply(
             "Привіт! Тепер ти будеш отримувати повідомлення про вільні дати. Використовуй /checkFreeDate для перевірки вільних дат."
         );
