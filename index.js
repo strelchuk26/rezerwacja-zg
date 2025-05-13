@@ -80,7 +80,7 @@ bot.command("start", async (ctx) => {
                 "Привіт! Тепер ти будеш отримувати повідомлення про вільні дати. Використовуй /checkFreeDate для перевірки вільних дат."
             );
             bot.api.sendMessage(
-                process.env.ADMIN_CHAT_ID,
+                process.env.ADMIN_CHAT_ID.toString(),
                 `Користувач ${username} (${firstName}) підписався на сповіщення.`
             );
         }
