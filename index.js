@@ -71,7 +71,7 @@ bot.command("start", async (ctx) => {
         const registrationDate = new Date().toISOString();
         const firstName = ctx.from?.first_name || "Unknown";
 
-        const userRef = db.collection("users").doc(chatId);
+        const userRef = db.collection(USERS_COLLECTION).doc(chatId);
         const doc = await userRef.get();
 
         if (!doc.exists) {
