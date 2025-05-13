@@ -66,7 +66,7 @@ bot.catch((err) => {
 
 bot.command("start", async (ctx) => {
     try {
-        const chatId = ctx.chat.id;
+        const chatId = ctx.chat?.id?.toString();
         const username = ctx.from?.username || "Unknown";
         const registrationDate = new Date().toISOString();
         const firstName = ctx.from?.first_name || "Unknown";
