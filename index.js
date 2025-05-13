@@ -70,10 +70,20 @@ bot.command("start", async (ctx) => {
         const username = ctx.from?.username || "Unknown";
         const registrationDate = new Date().toISOString();
         const firstName = ctx.from?.first_name || "Unknown";
-        await saveUser(chatId, username, registrationDate, firstName);
-        ctx.reply(
-            "Привіт! Тепер ти будеш отримувати повідомлення про вільні дати. Використовуй /checkFreeDate для перевірки вільних дат."
-        );
+
+        const userRef = db.collection("users").doc(chatId);
+        const doc = await userRef.get();
+
+        if (!doc.exists) {
+            await saveUser(chatId, username, registrationDate, firstName);
+            ctx.reply(
+                "Привіт! Тепер ти будеш отримувати повідомлення про вільні дати. Використовуй /checkFreeDate для перевірки вільних дат."
+            );
+            bot.api.sendMessage(
+                process.env.ADMIN_CHAT_ID,
+                `Користувач ${username} (${firstName}) підписався на сповіщення.`
+            );
+        }
     } catch (error) {
         console.error(error);
     }
