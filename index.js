@@ -3,7 +3,7 @@ import dotenv from "dotenv";
 import axios from "axios";
 import admin from "firebase-admin";
 import cron from "node-cron";
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot, InlineKeyboard, Keyboard } from "grammy";
 
 dotenv.config();
 
@@ -20,19 +20,30 @@ admin.initializeApp({
 });
 const db = admin.firestore();
 const USERS_COLLECTION = "telegram_users";
-let last_date = "";
+let lastDates = {};
 
-const serverURL =
-    "https://plugin.bookero.pl/plugin-api/v2/getMonth?bookero_id=SnLKupjwDaPO&lang=pl&periodicity_id=0&custom_duration_id=0&service=55039&worker=0&plugin_comment=%7B%22data%22:%7B%22parameters%22:%7B%7D%7D%7D&phone=&people=1&email=&plus_months=0";
+const BASE_URL =
+    "https://plugin.bookero.pl/plugin-api/v2/getMonth?bookero_id=SnLKupjwDaPO&lang=pl&periodicity_id=0&custom_duration_id=0&worker=0&plugin_comment=%7B%22data%22:%7B%22parameters%22:%7B%7D%7D%7D&phone=&people=1&email=&plus_months=0";
+
+function getServiceUrl(serviceId) {
+    return `${BASE_URL}&service=${serviceId}`;
+}
+
+const SERVICES = {
+    PKK_FOREIGNERS: 55039, // Foreigners PKK
+    PLASTIC_LICENCE: 37752, // Plastic licence
+    REGISTRATION_RP: 13457, // Registration in RP
+    REGISTRATION_ABROAD: 16953, // Registration from abroad
+};
 
 app.get("/", (req, res) => {
     res.send("Server is running!");
 });
 
-async function saveUser(chatId, username, registrationDate, firstName) {
+async function saveUser(chatId, username, registrationDate, firstName, subscription, approved = false) {
     try {
         const userRef = db.collection(USERS_COLLECTION).doc(chatId.toString());
-        await userRef.set({ chatId, username, registrationDate, firstName }, { merge: true });
+        await userRef.set({ chatId, username, registrationDate, firstName, subscription, approved }, { merge: true });
         console.log(`User ${username} with chatId ${chatId} saved successfully.`);
     } catch (error) {
         console.error("Error saving user to Firestore:", error);
@@ -40,19 +51,9 @@ async function saveUser(chatId, username, registrationDate, firstName) {
     }
 }
 
-async function getAllUsers() {
+async function fetchData(serviceId) {
     try {
-        const snapshot = await db.collection(USERS_COLLECTION).get();
-        return snapshot.docs.map((doc) => doc.data().chatId);
-    } catch (error) {
-        console.error("Error fetching users from Firestore:", error);
-        throw new Error("Failed to fetch users.");
-    }
-}
-
-async function fetchData() {
-    try {
-        const response = await axios.get(serverURL);
+        const response = await axios.get(getServiceUrl(serviceId));
         return response.data;
     } catch (error) {
         console.error(error);
@@ -76,26 +77,84 @@ bot.command("start", async (ctx) => {
 
         if (!doc.exists) {
             await saveUser(chatId, username, registrationDate, firstName);
-            ctx.reply(
-                "Привіт! Тепер ти будеш отримувати повідомлення про вільні дати. Використовуй /checkFreeDate для перевірки вільних дат."
-            );
-            bot.api.sendMessage(
+            await ctx.reply("Очікуй підтвердження від адміністратора перед початком користування ботом.");
+
+            const approveKeyboard = new InlineKeyboard().text("✅ Дозволити", `approve_${chatId}`);
+            await bot.api.sendMessage(
                 process.env.ADMIN_CHAT_ID.toString(),
-                `Користувач ${username} (${firstName}) підписався на сповіщення.`
+                `Нове запит на доступ від користувача ${username} (${firstName})`,
+                { reply_markup: approveKeyboard }
             );
+        } else {
+            const data = doc.data();
+            if (!data.approved) {
+                await ctx.reply("Очікуй підтвердження від адміністратора перед початком користування ботом.");
+            } else {
+                const keyboard = new Keyboard()
+                    .text("PKK (іноземці)")
+                    .text("Посвідчення водія (пластик)")
+                    .text("Реєстрація авто з РП")
+                    .text("Реєстрація авто з-за кордону")
+                    .resized();
+
+                await ctx.reply("Що саме ти хочеш відстежувати?", {
+                    reply_markup: keyboard,
+                });
+            }
         }
     } catch (error) {
         console.error(error);
     }
 });
 
+bot.callbackQuery(/^approve_/, async (ctx) => {
+    const chatId = ctx.callbackQuery.data.split("_")[1];
+    await db.collection(USERS_COLLECTION).doc(chatId).update({ approved: true });
+    await ctx.reply(`Користувачу ${chatId} дозволено доступ.`);
+    await bot.api.sendMessage(
+        chatId,
+        "✅ Адміністратор підтвердив доступ. Тепер ти можеш користуватися ботом. Напиши /start."
+    );
+    await ctx.answerCallbackQuery();
+});
+
+bot.hears("PKK (іноземці)", async (ctx) => {
+    const chatId = ctx.chat.id.toString();
+    await db.collection(USERS_COLLECTION).doc(chatId).update({ subscription: "PKK_FOREIGNERS" });
+    await ctx.reply("Ти підписався на сповіщення про вільні дати реєстрації PKK (для іноземців). ⏳");
+});
+
+bot.hears("Посвідчення водія (пластик)", async (ctx) => {
+    const chatId = ctx.chat.id.toString();
+    await db.collection(USERS_COLLECTION).doc(chatId).update({ subscription: "PLASTIC_LICENCE" });
+    await ctx.reply(
+        "Ти підписався на сповіщення про вільні дати реєстрації для отримання водійського посвідчення (пластик). ⏳"
+    );
+});
+
+bot.hears("Реєстрація авто з РП", async (ctx) => {
+    const chatId = ctx.chat.id.toString();
+    await db.collection(USERS_COLLECTION).doc(chatId).update({ subscription: "REGISTRATION_RP" });
+    await ctx.reply("Ти підписався на сповіщення про вільні дати для реєстрації авто з РП. ⏳");
+});
+
+bot.hears("Реєстрація авто з-за кордону", async (ctx) => {
+    const chatId = ctx.chat.id.toString();
+    await db.collection(USERS_COLLECTION).doc(chatId).update({ subscription: "REGISTRATION_ABROAD" });
+    await ctx.reply("Ти підписався на сповіщення про вільні дати для реєстрації авто з-за кордону. ⏳");
+});
+
 bot.command("checkFreeDate", async (ctx) => {
     try {
-        const data = await fetchData();
+        const userRef = db.collection(USERS_COLLECTION).doc(ctx.chat?.id?.toString());
+        const user = (await userRef.get()).data();
+
+        const data = await fetchData(SERVICES[user.subscription]);
+
         if (data) {
             if (data.first_free_term) {
                 console.log(`${ctx.from?.username}: ${data.first_free_term}`);
-                last_date = data.first_free_term;
+                lastDates[user.subscription] = data.first_free_term;
                 const keyboard = new InlineKeyboard().url("Зарезервуй!", `https://rezerwacja.zielona-gora.pl/`);
                 ctx.reply(`Перша вільна дата для резервування: ${data.first_free_term}`, {
                     reply_markup: keyboard,
@@ -113,37 +172,64 @@ bot.command("checkFreeDate", async (ctx) => {
 
 async function checkAndNotifyUsers() {
     try {
-        const data = await fetchData();
-        if (data && data.first_free_term) {
-            console.log(data.first_free_term);
-            if (last_date === data.first_free_term) {
-                return;
-            } else {
-                last_date = data.first_free_term;
+        for (const [subscriptionKey, serviceId] of Object.entries(SERVICES)) {
+            const data = await fetchData(serviceId);
+
+            if (data && data.first_free_term) {
+                if (lastDates[subscriptionKey] === data.first_free_term) continue;
+
+                lastDates[subscriptionKey] = data.first_free_term;
+                console.log(`🔔 Нова дата для ${subscriptionKey}: ${data.first_free_term}`);
+
                 const keyboard = new InlineKeyboard().url("Зарезервуй!", `https://rezerwacja.zielona-gora.pl/`);
-                const users = await getAllUsers();
+
+                const snapshot = await db
+                    .collection(USERS_COLLECTION)
+                    .where("subscription", "==", subscriptionKey)
+                    .where("approved", "==", true)
+                    .get();
+
+                const users = snapshot.docs.map((doc) => doc.data().chatId);
+
                 for (const chatId of users) {
                     try {
                         await bot.api.sendMessage(
                             chatId,
-                            `Перша вільна дата для резервування: ${data.first_free_term}`,
+                            `🔔 Перша вільна дата для *${formatServiceName(subscriptionKey)}*: ${data.first_free_term}`,
                             {
+                                parse_mode: "Markdown",
                                 reply_markup: keyboard,
                             }
                         );
+                        console.log(`✅ Повідомлення надіслано користувачу ${chatId}`);
                     } catch (err) {
-                        console.error(`Не вдалося відправити повідомлення користувачу ${chatId}:`, err);
+                        console.error(`❌ Не вдалося надіслати повідомлення користувачу ${chatId}:`, err);
                     }
                 }
             }
         }
     } catch (error) {
-        console.error("Error in checkAndNotifyUsers:", error);
+        console.error("❌ Помилка в checkAndNotifyUsers:", error);
+    }
+}
+
+function formatServiceName(key) {
+    switch (key) {
+        case "PKK_FOREIGNERS":
+            return "PKK для іноземців";
+        case "PLASTIC_LICENCE":
+            return "Отримання посвідчення водія";
+        case "REGISTRATION_RP":
+            return "Реєстрація авто з РП";
+        case "REGISTRATION_ABROAD":
+            return "Реєстрація авто з-за кордону";
+        default:
+            return key;
     }
 }
 
 cron.schedule("*/10 * * * *", async () => {
-    console.log(`Розсилка...`);
+    console.log(`Розсилка...`, new Date().toLocaleString());
     await checkAndNotifyUsers();
 });
 
