@@ -40,7 +40,7 @@ app.get("/", (req, res) => {
     res.send("Server is running!");
 });
 
-async function saveUser(chatId, username, registrationDate, firstName, subscription, approved = false) {
+async function saveUser(chatId, username, registrationDate, firstName, subscription = null, approved = false) {
     try {
         const userRef = db.collection(USERS_COLLECTION).doc(chatId.toString());
         await userRef.set({ chatId, username, registrationDate, firstName, subscription, approved }, { merge: true });
@@ -82,29 +82,48 @@ bot.command("start", async (ctx) => {
             const approveKeyboard = new InlineKeyboard().text("✅ Дозволити", `approve_${chatId}`);
             await bot.api.sendMessage(
                 process.env.ADMIN_CHAT_ID.toString(),
-                `Нове запит на доступ від користувача ${username} (${firstName})`,
+                `Новий запит на доступ від користувача ${username} (${firstName})`,
                 { reply_markup: approveKeyboard }
             );
         } else {
             const data = doc.data();
             if (!data.approved) {
                 await ctx.reply("Очікуй підтвердження від адміністратора перед початком користування ботом.");
-            } else {
-                const keyboard = new Keyboard()
-                    .text("PKK (іноземці)")
-                    .text("Посвідчення водія (пластик)")
-                    .text("Реєстрація авто з РП")
-                    .text("Реєстрація авто з-за кордону")
-                    .resized();
-
-                await ctx.reply("Що саме ти хочеш відстежувати?", {
-                    reply_markup: keyboard,
-                });
             }
         }
     } catch (error) {
         console.error(error);
     }
+});
+
+bot.command("services", async (ctx) => {
+    const keyboard = new InlineKeyboard()
+        .text("PKK (іноземці)", "sub_PKK_FOREIGNERS")
+        .text("Посвідчення водія", "sub_PLASTIC_LICENCE")
+        .row()
+        .text("Реєстрація з РП", "sub_REGISTRATION_RP")
+        .text("Реєстрація з-за кордону", "sub_REGISTRATION_ABROAD");
+
+    await ctx.reply("Оберіть сервіс, який хочете відстежувати:", {
+        reply_markup: keyboard,
+    });
+});
+
+bot.callbackQuery(/^sub_/, async (ctx) => {
+    const chatId = ctx.chat?.id?.toString();
+    const subscriptionKey = ctx.callbackQuery.data.replace("sub_", "");
+
+    if (!chatId || !SERVICES[subscriptionKey]) {
+        return await ctx.answerCallbackQuery({ text: "Помилка при обробці вибору.", show_alert: true });
+    }
+
+    await db.collection(USERS_COLLECTION).doc(chatId).update({ subscription: subscriptionKey });
+    await ctx.answerCallbackQuery({ text: "✅ Сервіс обрано!" });
+
+    await ctx.reply(
+        `Ти підписався на сповіщення про вільні дати для: *${formatServiceName(subscriptionKey)}*. \nВикористовуй команду /checkFreeDate, щоб перевірити наявність вільних дат.`,
+        { parse_mode: "Markdown" }
+    );
 });
 
 bot.callbackQuery(/^approve_/, async (ctx) => {
@@ -113,35 +132,9 @@ bot.callbackQuery(/^approve_/, async (ctx) => {
     await ctx.reply(`Користувачу ${chatId} дозволено доступ.`);
     await bot.api.sendMessage(
         chatId,
-        "✅ Адміністратор підтвердив доступ. Тепер ти можеш користуватися ботом. Напиши /start."
+        "✅ Адміністратор підтвердив доступ. Тепер ти можеш користуватися ботом.\nЩоб вибрати сервіс для сповіщення — напиши команду /services"
     );
     await ctx.answerCallbackQuery();
-});
-
-bot.hears("PKK (іноземці)", async (ctx) => {
-    const chatId = ctx.chat.id.toString();
-    await db.collection(USERS_COLLECTION).doc(chatId).update({ subscription: "PKK_FOREIGNERS" });
-    await ctx.reply("Ти підписався на сповіщення про вільні дати реєстрації PKK (для іноземців). ⏳");
-});
-
-bot.hears("Посвідчення водія (пластик)", async (ctx) => {
-    const chatId = ctx.chat.id.toString();
-    await db.collection(USERS_COLLECTION).doc(chatId).update({ subscription: "PLASTIC_LICENCE" });
-    await ctx.reply(
-        "Ти підписався на сповіщення про вільні дати реєстрації для отримання водійського посвідчення (пластик). ⏳"
-    );
-});
-
-bot.hears("Реєстрація авто з РП", async (ctx) => {
-    const chatId = ctx.chat.id.toString();
-    await db.collection(USERS_COLLECTION).doc(chatId).update({ subscription: "REGISTRATION_RP" });
-    await ctx.reply("Ти підписався на сповіщення про вільні дати для реєстрації авто з РП. ⏳");
-});
-
-bot.hears("Реєстрація авто з-за кордону", async (ctx) => {
-    const chatId = ctx.chat.id.toString();
-    await db.collection(USERS_COLLECTION).doc(chatId).update({ subscription: "REGISTRATION_ABROAD" });
-    await ctx.reply("Ти підписався на сповіщення про вільні дати для реєстрації авто з-за кордону. ⏳");
 });
 
 bot.command("checkFreeDate", async (ctx) => {
@@ -156,9 +149,14 @@ bot.command("checkFreeDate", async (ctx) => {
                 console.log(`${ctx.from?.username}: ${data.first_free_term}`);
                 lastDates[user.subscription] = data.first_free_term;
                 const keyboard = new InlineKeyboard().url("Зарезервуй!", `https://rezerwacja.zielona-gora.pl/`);
-                ctx.reply(`Перша вільна дата для резервування: ${data.first_free_term}`, {
-                    reply_markup: keyboard,
-                });
+                ctx.reply(
+                    `Перша вільна дата для резервування (${formatServiceName(user.subscription)}): ${
+                        data.first_free_term
+                    }`,
+                    {
+                        reply_markup: keyboard,
+                    }
+                );
             } else {
                 ctx.reply("Немає вільних термінів.");
             }
