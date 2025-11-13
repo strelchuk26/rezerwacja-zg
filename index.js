@@ -150,7 +150,7 @@ bot.command("notifyUnapproved", async (ctx) => {
 });
 
 
-bot.command("checkFreeDate", async (ctx) => {
+bot.command("checkfreedate", async (ctx) => {
     try {
         const userRef = db.collection(USERS_COLLECTION).doc(ctx.chat?.id?.toString());
         const user = (await userRef.get()).data();
@@ -195,7 +195,7 @@ bot.callbackQuery(/^sub_/, async (ctx) => {
     await ctx.reply(
         `Ти підписався на сповіщення про вільні дати для: *${formatServiceName(
             subscriptionKey
-        )}*. \nВикористовуй команду /checkFreeDate, щоб перевірити наявність вільних дат.`,
+        )}*. \nВикористовуй команду /checkfreedate, щоб перевірити наявність вільних дат.`,
         { parse_mode: "Markdown" }
     );
 });
